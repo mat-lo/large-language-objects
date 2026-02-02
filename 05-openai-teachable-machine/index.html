@@ -361,8 +361,13 @@
                           description:
                             "Whether there is a person visible in the image",
                         },
+                        isHappy: {
+                          type: "boolean",
+                          description:
+                            "Whether the person is happy in the image",
+                        },
                       },
-                      required: ["isPerson"],
+                      required: ["isPerson", "isHappy"],
                       additionalProperties: false,
                     },
                   },
@@ -392,11 +397,18 @@
           }
 
           // Update UI
+          const personText = result.isPerson ? "✓ Person" : "✗ No person";
+          const happyText =
+            result.isPerson && result.isHappy !== undefined
+              ? result.isHappy
+                ? " ✓ Happy"
+                : " ✗ Not happy"
+              : "";
           if (result.isPerson) {
-            status.textContent = "✓ Person detected!";
+            status.textContent = `${personText}${happyText}`;
             status.className = "status person";
           } else {
-            status.textContent = "✗ No person detected";
+            status.textContent = personText;
             status.className = "status no-person";
           }
 
