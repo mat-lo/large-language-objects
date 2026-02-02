@@ -1,97 +1,7 @@
-<style>
-  * {
-    box-sizing: border-box;
-  }
-  html,
-  body {
-    margin: 0;
-    padding: 0;
-    min-height: 100vh;
-    font-family: system-ui, -apple-system, sans-serif;
-    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-    overflow: hidden;
-  }
-  .app {
-    position: relative;
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .start-btn {
-    position: relative;
-    z-index: 10;
-    padding: 1.25rem 3rem;
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    color: #eee;
-    background: linear-gradient(180deg, #e94560 0%, #c73e54 100%);
-    border: none;
-    border-radius: 999px;
-    box-shadow: 0 8px 0 #8b2a3a, 0 12px 24px rgba(0, 0, 0, 0.4),
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
-    cursor: pointer;
-    transition: transform 0.1s, box-shadow 0.1s;
-  }
-  .start-btn:hover {
-    transform: translateY(2px);
-    box-shadow: 0 6px 0 #8b2a3a, 0 8px 16px rgba(0, 0, 0, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  }
-  .start-btn:active {
-    transform: translateY(6px);
-    box-shadow: 0 2px 0 #8b2a3a, 0 4px 8px rgba(0, 0, 0, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-  }
-  #webcam-container,
-  #label-container {
-    position: absolute;
-    left: -9999px;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-  }
-  #particles {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .particle {
-    position: absolute;
-    font-size: 2rem;
-    opacity: 0;
-    transition: opacity 0.3s;
-  }
-  .particle.visible {
-    opacity: 0.85;
-    animation: float 3s ease-in-out infinite;
-  }
-  @keyframes float {
-    0%,
-    100% {
-      transform: translate(0, 0) rotate(0deg);
-    }
-    25% {
-      transform: translate(8px, -12px) rotate(5deg);
-    }
-    50% {
-      transform: translate(-6px, -20px) rotate(-5deg);
-    }
-    75% {
-      transform: translate(10px, -8px) rotate(3deg);
-    }
-  }
-</style>
-<div class="app">
-  <button type="button" class="start-btn" onclick="init()">Start</button>
-  <div id="particles"></div>
-  <div id="webcam-container"></div>
-  <div id="label-container"></div>
-</div>
+<div>Teachable Machine Image Model</div>
+<button type="button" onclick="init()">Start</button>
+<div id="webcam-container"></div>
+<div id="label-container"></div>
 <audio id="music" src="music.mp3" loop></audio>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
@@ -104,31 +14,6 @@
 
   let model, webcam, labelContainer, maxPredictions;
   let music;
-  let particlesEl;
-  const PARTICLE_COUNT = 28;
-
-  function createParticles() {
-    particlesEl = document.getElementById("particles");
-    particlesEl.innerHTML = "";
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      const p = document.createElement("span");
-      p.className = "particle";
-      p.textContent = "🎵";
-      p.style.left = Math.random() * 100 + "%";
-      p.style.top = Math.random() * 100 + "%";
-      p.style.animationDelay = Math.random() * 2 + "s";
-      p.style.animationDuration = 2 + Math.random() * 2 + "s";
-      particlesEl.appendChild(p);
-    }
-  }
-
-  function setParticlesVisible(visible) {
-    if (!particlesEl) return;
-    const list = particlesEl.querySelectorAll(".particle");
-    list.forEach((el) => {
-      el.classList.toggle("visible", visible);
-    });
-  }
 
   // Load the image model and setup the webcam
   async function init() {
@@ -157,9 +42,8 @@
       labelContainer.appendChild(document.createElement("div"));
     }
 
-    // Get reference to audio element and build particle system
+    // Get reference to audio element
     music = document.getElementById("music");
-    createParticles();
   }
 
   async function loop() {
@@ -192,11 +76,9 @@
     // Control music based on predicted class
     if (predictedClass === "Open" && music.paused) {
       music.play();
-      setParticlesVisible(true);
     } else if (predictedClass === "Closed" && !music.paused) {
       music.pause();
       music.currentTime = 0; // Reset to beginning
-      setParticlesVisible(false);
     }
   }
 </script>
