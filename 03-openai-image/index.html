@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image → GPT</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 560px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #1a1a1a;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1.25rem;
+      }
+      label {
+        display: block;
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 0.35rem;
+        color: #444;
+      }
+      input[type="text"],
+      input[type="password"],
+      textarea {
+        width: 100%;
+        padding: 0.6rem 0.75rem;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        font-size: 1rem;
+        margin-bottom: 1rem;
+      }
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .dropzone {
+        border: 2px dashed #aaa;
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        background: #f8f8f8;
+        margin-bottom: 1rem;
+        cursor: pointer;
+        transition: border-color 0.2s, background 0.2s;
+      }
+      .dropzone:hover,
+      .dropzone.dragover {
+        border-color: #666;
+        background: #eee;
+      }
+      .dropzone.has-image {
+        border-style: solid;
+        border-color: #2a7;
+        background: #f0fdf4;
+      }
+      .dropzone p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9rem;
+      }
+      .dropzone .filename {
+        margin-top: 0.5rem;
+        font-weight: 500;
+        color: #1a1a1a;
+      }
+      .dropzone input[type="file"] {
+        display: none;
+      }
+      button {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        font-size: 1rem;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        background: #111;
+        color: #fff;
+        cursor: pointer;
+        margin-bottom: 1rem;
+      }
+      button:hover {
+        background: #333;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .response {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 8px;
+        background: #f5f5f5;
+        border: 1px solid #e0e0e0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.9rem;
+        min-height: 60px;
+      }
+      .response.error {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+      }
+      .response.loading {
+        color: #666;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Image → GPT</h1>
+
+    <label for="apiKey">OpenAI API key</label>
+    <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" />
+
+    <label for="prompt">Prompt</label>
+    <input
+      type="text"
+      id="prompt"
+      placeholder="e.g. What is in this image?"
+      value="What is in this image?"
+    />
+
+    <label>Image</label>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="image/*" />
+      <p id="dropzoneText">Drop an image here or click to choose</p>
+      <p class="filename" id="filename"></p>
+    </div>
+
+    <button type="button" id="submit" disabled>Send to GPT</button>
+
+    <div class="response" id="response" aria-live="polite"></div>
+
+    <script>
+      const apiKeyEl = document.getElementById("apiKey");
+      const promptEl = document.getElementById("prompt");
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("fileInput");
+      const filenameEl = document.getElementById("filename");
+      const submitBtn = document.getElementById("submit");
+      const responseEl = document.getElementById("response");
+
+      let selectedFile = null;
+
+      function setResponse(text, isError = false) {
+        responseEl.textContent = text;
+        responseEl.className =
+          "response" +
+          (isError ? " error" : "") +
+          (text === "Sending…" ? " loading" : "");
+      }
+
+      function updateSubmitState() {
+        submitBtn.disabled = !selectedFile || !apiKeyEl.value.trim();
+      }
+
+      apiKeyEl.addEventListener("input", updateSubmitState);
+
+      dropzone.addEventListener("click", () => fileInput.click());
+      dropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropzone.classList.add("dragover");
+      });
+      dropzone.addEventListener("dragleave", () =>
+        dropzone.classList.remove("dragover")
+      );
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropzone.classList.remove("dragover");
+        const file = e.dataTransfer.files[0];
+        if (file && file.type.startsWith("image/")) setFile(file);
+      });
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files[0];
+        if (file) setFile(file);
+      });
+
+      function setFile(file) {
+        selectedFile = file;
+        filenameEl.textContent = file.name;
+        dropzone.classList.add("has-image");
+        updateSubmitState();
+      }
+
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+      }
+
+      submitBtn.addEventListener("click", async () => {
+        if (!selectedFile || !apiKeyEl.value.trim()) return;
+        const prompt = promptEl.value.trim() || "What is in this image?";
+        setResponse("Sending…");
+        submitBtn.disabled = true;
+
+        try {
+          const dataUrl = await fileToDataUrl(selectedFile);
+          const res = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + apiKeyEl.value.trim(),
+              },
+              body: JSON.stringify({
+                model: "gpt-4.1",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: prompt },
+                      { type: "image_url", image_url: { url: dataUrl } },
+                    ],
+                  },
+                ],
+                max_tokens: 300,
+              }),
+            }
+          );
+
+          const data = await res.json();
+          if (!res.ok) {
+            setResponse(
+              data.error?.message || JSON.stringify(data, null, 2),
+              true
+            );
+            return;
+          }
+          const content =
+            data.choices?.[0]?.message?.content ??
+            JSON.stringify(data, null, 2);
+          setResponse(content);
+        } catch (err) {
+          setResponse(err.message || String(err), true);
+        } finally {
+          submitBtn.disabled = false;
+          updateSubmitState();
+        }
+      });
+    </script>
+  </body>
+</html>
