@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Camera → OpenAI Vision</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 1.5rem;
+        background: #0f0f0f;
+        color: #e0e0e0;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin-bottom: 1rem;
+      }
+      label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-size: 0.875rem;
+        color: #999;
+      }
+      input[type="password"],
+      select,
+      button {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        margin-bottom: 1rem;
+        border: 1px solid #333;
+        border-radius: 6px;
+        background: #1a1a1a;
+        color: #e0e0e0;
+        font-size: 0.9375rem;
+      }
+      button {
+        cursor: pointer;
+        background: #2a2a2a;
+        font-weight: 500;
+      }
+      button:hover {
+        background: #333;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .video-wrap {
+        position: relative;
+        aspect-ratio: 16/10;
+        background: #111;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+      }
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .video-wrap .placeholder {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #555;
+        font-size: 0.875rem;
+      }
+      #output {
+        min-height: 4rem;
+        padding: 1rem;
+        background: #1a1a1a;
+        border-radius: 8px;
+        border: 1px solid #333;
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      #output.empty {
+        color: #555;
+      }
+      .status {
+        font-size: 0.8125rem;
+        color: #666;
+        margin-bottom: 0.5rem;
+      }
+      canvas {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Camera → OpenAI Vision</h1>
+
+    <label for="apiKey">OpenAI API key</label>
+    <input type="password" id="apiKey" placeholder="sk-…" autocomplete="off" />
+
+    <label for="camera">Camera</label>
+    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem">
+      <select id="camera" style="margin-bottom: 0; flex: 1">
+        <option value="">-- Load cameras first --</option>
+      </select>
+      <button
+        type="button"
+        id="loadCamerasBtn"
+        style="width: auto; margin-bottom: 0; flex-shrink: 0"
+      >
+        Load cameras
+      </button>
+    </div>
+
+    <div class="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="placeholder" id="placeholder">
+        Click "Load cameras", then select your camera
+      </div>
+    </div>
+
+    <p class="status" id="status">
+      Stopped. Select a camera and ensure API key is set.
+    </p>
+    <button type="button" id="toggle">Start (capture every 6s)</button>
+
+    <label style="margin-top: 1rem">Latest description</label>
+    <div id="output" class="empty">No response yet.</div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+      const PROMPT = "Describe what you see in the image";
+      const INTERVAL_MS = 6000;
+
+      const apiKeyEl = document.getElementById("apiKey");
+      const cameraEl = document.getElementById("camera");
+      const loadCamerasBtn = document.getElementById("loadCamerasBtn");
+      const videoEl = document.getElementById("video");
+      const placeholderEl = document.getElementById("placeholder");
+      const statusEl = document.getElementById("status");
+      const toggleBtn = document.getElementById("toggle");
+      const outputEl = document.getElementById("output");
+      const canvasEl = document.getElementById("canvas");
+      const ctx = canvasEl.getContext("2d");
+
+      let stream = null;
+      let intervalId = null;
+      let isRunning = false;
+
+      async function loadCameras() {
+        loadCamerasBtn.disabled = true;
+        cameraEl.innerHTML = '<option value="">-- Loading… --</option>';
+        statusEl.textContent = "Requesting camera permission…";
+        try {
+          // Must get permission first; otherwise enumerateDevices() returns empty labels
+          const tempStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+          tempStream.getTracks().forEach((t) => t.stop());
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          const videoDevs = devs.filter((d) => d.kind === "videoinput");
+          cameraEl.innerHTML = '<option value="">-- Select camera --</option>';
+          videoDevs.forEach((d) => {
+            const opt = document.createElement("option");
+            opt.value = d.deviceId;
+            opt.textContent = d.label || "Unnamed camera";
+            cameraEl.appendChild(opt);
+          });
+          statusEl.textContent = "Cameras loaded. Select one to start.";
+        } catch (e) {
+          cameraEl.innerHTML =
+            '<option value="">-- Load cameras first --</option>';
+          statusEl.textContent = "Camera permission needed: " + e.message;
+        }
+        loadCamerasBtn.disabled = false;
+      }
+
+      async function startCamera(deviceId) {
+        stopCamera();
+        const constraints = deviceId
+          ? { video: { deviceId: { exact: deviceId } }, audio: false }
+          : { video: true, audio: false };
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          videoEl.srcObject = stream;
+          placeholderEl.style.display = "none";
+          statusEl.textContent =
+            "Camera on. Click Start to send snapshots every 6s.";
+        } catch (e) {
+          placeholderEl.style.display = "flex";
+          placeholderEl.textContent = "Camera error: " + e.message;
+          statusEl.textContent = "Camera error: " + e.message;
+        }
+      }
+
+      function stopCamera() {
+        if (stream) {
+          stream.getTracks().forEach((t) => t.stop());
+          stream = null;
+        }
+        videoEl.srcObject = null;
+        placeholderEl.style.display = "flex";
+        placeholderEl.textContent =
+          'Click "Load cameras", then select your camera';
+      }
+
+      function captureFrame() {
+        if (!stream || videoEl.readyState < 2) return null;
+        const w = videoEl.videoWidth;
+        const h = videoEl.videoHeight;
+        if (!w || !h) return null;
+        canvasEl.width = w;
+        canvasEl.height = h;
+        ctx.drawImage(videoEl, 0, 0);
+        return canvasEl.toDataURL("image/jpeg", 0.85);
+      }
+
+      async function sendToOpenAI(dataUrl) {
+        const key = (apiKeyEl.value || "").trim();
+        if (!key) {
+          statusEl.textContent = "Set your OpenAI API key.";
+          return;
+        }
+        statusEl.textContent = "Sending snapshot to OpenAI…";
+        try {
+          const res = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + key,
+              },
+              body: JSON.stringify({
+                model: "gpt-4.1",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: PROMPT },
+                      { type: "image_url", image_url: { url: dataUrl } },
+                    ],
+                  },
+                ],
+                max_tokens: 300,
+              }),
+            }
+          );
+          const data = await res.json();
+          if (data.error) {
+            outputEl.textContent =
+              "Error: " + (data.error.message || JSON.stringify(data.error));
+            outputEl.classList.remove("empty");
+            statusEl.textContent = "API error. Next capture in 6s.";
+            return;
+          }
+          const content = data.choices?.[0]?.message?.content ?? "";
+          outputEl.textContent = content || "(No text in response)";
+          outputEl.classList.remove("empty");
+          statusEl.textContent = "Last capture sent. Next in 6s.";
+        } catch (e) {
+          outputEl.textContent = "Request failed: " + e.message;
+          outputEl.classList.remove("empty");
+          statusEl.textContent = "Request failed. Next capture in 6s.";
+        }
+      }
+
+      function tick() {
+        const dataUrl = captureFrame();
+        if (dataUrl) sendToOpenAI(dataUrl);
+      }
+
+      function startLoop() {
+        if (intervalId) return;
+        intervalId = setInterval(tick, INTERVAL_MS);
+        tick();
+        isRunning = true;
+        toggleBtn.textContent = "Stop";
+        statusEl.textContent = "Capturing every 6s…";
+      }
+
+      function stopLoop() {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = null;
+        isRunning = false;
+        toggleBtn.textContent = "Start (capture every 6s)";
+        statusEl.textContent =
+          "Stopped. Select a camera and ensure API key is set.";
+      }
+
+      cameraEl.addEventListener("change", () => {
+        const id = cameraEl.value;
+        if (id) startCamera(id);
+        else stopCamera();
+      });
+
+      toggleBtn.addEventListener("click", () => {
+        if (isRunning) stopLoop();
+        else {
+          if (!stream) {
+            statusEl.textContent = "Select a camera first.";
+            return;
+          }
+          startLoop();
+        }
+      });
+
+      loadCamerasBtn.addEventListener("click", loadCameras);
+    </script>
+  </body>
+</html>
