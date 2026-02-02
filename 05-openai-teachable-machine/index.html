@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Person Detection Camera</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 800px;
+        width: 100%;
+      }
+
+      h1 {
+        text-align: center;
+        color: #333;
+        margin-bottom: 30px;
+        font-size: 2em;
+      }
+
+      .video-container {
+        position: relative;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 auto 20px;
+        border-radius: 15px;
+        overflow: hidden;
+        background: #000;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+
+      #video {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+
+      select,
+      button {
+        padding: 12px 20px;
+        font-size: 16px;
+        border: 2px solid #667eea;
+        border-radius: 8px;
+        background: white;
+        color: #667eea;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      select:hover,
+      button:hover {
+        background: #667eea;
+        color: white;
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      button:disabled:hover {
+        background: white;
+        color: #667eea;
+      }
+
+      .status {
+        padding: 15px;
+        border-radius: 10px;
+        margin-top: 20px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 18px;
+        transition: all 0.3s ease;
+      }
+
+      .status.idle {
+        background: #e3f2fd;
+        color: #1976d2;
+      }
+
+      .status.detecting {
+        background: #fff3e0;
+        color: #f57c00;
+      }
+
+      .status.person {
+        background: #e8f5e9;
+        color: #388e3c;
+      }
+
+      .status.no-person {
+        background: #ffebee;
+        color: #d32f2f;
+      }
+
+      .status.error {
+        background: #ffebee;
+        color: #c62828;
+      }
+
+      .api-key-input {
+        width: 100%;
+        padding: 12px;
+        font-size: 14px;
+        border: 2px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 15px;
+        font-family: monospace;
+      }
+
+      .api-key-input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .countdown {
+        text-align: center;
+        margin-top: 10px;
+        color: #666;
+        font-size: 14px;
+      }
+
+      .last-result {
+        margin-top: 15px;
+        padding: 10px;
+        background: #f5f5f5;
+        border-radius: 8px;
+        font-family: monospace;
+        font-size: 14px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>👤 Person Detection Camera</h1>
+
+      <input
+        type="password"
+        id="apiKey"
+        class="api-key-input"
+        placeholder="Enter your OpenAI API key"
+      />
+
+      <div class="controls">
+        <button id="loadCamerasBtn">Load Cameras</button>
+        <select id="cameraSelect" disabled>
+          <option value="">Select a camera...</option>
+        </select>
+        <button id="startBtn" disabled>Start Detection</button>
+        <button id="stopBtn" disabled>Stop Detection</button>
+      </div>
+
+      <div class="video-container">
+        <video id="video" autoplay playsinline></video>
+      </div>
+
+      <div id="status" class="status idle">Ready to start</div>
+      <div id="countdown" class="countdown"></div>
+      <div id="lastResult" class="last-result"></div>
+    </div>
+
+    <script>
+      let stream = null;
+      let intervalId = null;
+      let countdownInterval = null;
+      let secondsUntilNext = 6;
+
+      const video = document.getElementById("video");
+      const cameraSelect = document.getElementById("cameraSelect");
+      const loadCamerasBtn = document.getElementById("loadCamerasBtn");
+      const startBtn = document.getElementById("startBtn");
+      const stopBtn = document.getElementById("stopBtn");
+      const status = document.getElementById("status");
+      const countdown = document.getElementById("countdown");
+      const lastResult = document.getElementById("lastResult");
+      const apiKeyInput = document.getElementById("apiKey");
+
+      // Request camera permission and load cameras
+      async function loadCameras() {
+        try {
+          status.textContent = "Requesting camera access...";
+          status.className = "status detecting";
+          loadCamerasBtn.disabled = true;
+
+          // Request camera access first (this grants permission)
+          const tempStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+          });
+
+          // Stop the temporary stream
+          tempStream.getTracks().forEach((track) => track.stop());
+
+          // Now enumerate devices (they'll have labels now)
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(
+            (device) => device.kind === "videoinput"
+          );
+
+          cameraSelect.innerHTML =
+            '<option value="">Select a camera...</option>';
+          videoDevices.forEach((device, index) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+            option.text = device.label || `Camera ${index + 1}`;
+            cameraSelect.appendChild(option);
+          });
+
+          // Enable camera select
+          cameraSelect.disabled = false;
+          status.textContent = `Found ${videoDevices.length} camera(s)`;
+          status.className = "status idle";
+          loadCamerasBtn.textContent = "Reload Cameras";
+          loadCamerasBtn.disabled = false;
+        } catch (error) {
+          console.error("Error loading cameras:", error);
+          status.textContent = `Error: ${error.message}`;
+          status.className = "status error";
+          loadCamerasBtn.disabled = false;
+        }
+      }
+
+      // Get available cameras (used after permission is granted)
+      async function getCameras() {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(
+            (device) => device.kind === "videoinput"
+          );
+
+          cameraSelect.innerHTML =
+            '<option value="">Select a camera...</option>';
+          videoDevices.forEach((device, index) => {
+            const option = document.createElement("option");
+            option.value = device.deviceId;
+            option.text = device.label || `Camera ${index + 1}`;
+            cameraSelect.appendChild(option);
+          });
+        } catch (error) {
+          console.error("Error enumerating devices:", error);
+          status.textContent = "Error: Could not access cameras";
+          status.className = "status error";
+        }
+      }
+
+      // Start video stream
+      async function startVideo(deviceId) {
+        try {
+          const constraints = {
+            video: deviceId ? { deviceId: { exact: deviceId } } : true,
+          };
+
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          video.srcObject = stream;
+
+          return true;
+        } catch (error) {
+          console.error("Error accessing camera:", error);
+          status.textContent = "Error: Could not access camera";
+          status.className = "status error";
+          return false;
+        }
+      }
+
+      // Capture frame from video
+      function captureFrame() {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(video, 0, 0);
+        return canvas.toDataURL("image/jpeg", 0.8);
+      }
+
+      // Send image to OpenAI
+      async function detectPerson(imageDataUrl) {
+        const apiKey = apiKeyInput.value.trim();
+        if (!apiKey) {
+          status.textContent = "Error: Please enter your OpenAI API key";
+          status.className = "status error";
+          return;
+        }
+
+        // Extract base64 data (remove data:image/jpeg;base64, prefix)
+        const base64Image = imageDataUrl.split(",")[1];
+
+        status.textContent = "Detecting...";
+        status.className = "status detecting";
+
+        try {
+          const response = await fetch(
+            "https://api.openai.com/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${apiKey}`,
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-2024-08-06",
+                messages: [
+                  {
+                    role: "system",
+                    content:
+                      "You are a person detection system. Analyze the image and determine if there is a person visible in it. Return true if a person is present, false otherwise.",
+                  },
+                  {
+                    role: "user",
+                    content: [
+                      {
+                        type: "text",
+                        text: "Is there a person in this image?",
+                      },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: `data:image/jpeg;base64,${base64Image}`,
+                        },
+                      },
+                    ],
+                  },
+                ],
+                response_format: {
+                  type: "json_schema",
+                  json_schema: {
+                    name: "person_detection",
+                    strict: true,
+                    schema: {
+                      type: "object",
+                      properties: {
+                        isPerson: {
+                          type: "boolean",
+                          description:
+                            "Whether there is a person visible in the image",
+                        },
+                      },
+                      required: ["isPerson"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                max_tokens: 100,
+              }),
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              errorData.error?.message ||
+                `HTTP error! status: ${response.status}`
+            );
+          }
+
+          const data = await response.json();
+
+          // Parse the structured output
+          let result;
+          if (data.choices && data.choices[0] && data.choices[0].message) {
+            const content = data.choices[0].message.content;
+            result = JSON.parse(content);
+          } else {
+            throw new Error("Unexpected response format");
+          }
+
+          // Update UI
+          if (result.isPerson) {
+            status.textContent = "✓ Person detected!";
+            status.className = "status person";
+          } else {
+            status.textContent = "✗ No person detected";
+            status.className = "status no-person";
+          }
+
+          lastResult.textContent = `Last result: ${JSON.stringify(result)}`;
+        } catch (error) {
+          console.error("Error detecting person:", error);
+          status.textContent = `Error: ${error.message}`;
+          status.className = "status error";
+          lastResult.textContent = "";
+        }
+      }
+
+      // Start detection loop
+      function startDetection() {
+        const deviceId = cameraSelect.value;
+
+        if (!deviceId) {
+          alert("Please select a camera first");
+          return;
+        }
+
+        startVideo(deviceId).then((success) => {
+          if (!success) return;
+
+          startBtn.disabled = true;
+          stopBtn.disabled = false;
+          cameraSelect.disabled = true;
+          status.textContent = "Detection started";
+          status.className = "status detecting";
+          secondsUntilNext = 6;
+
+          // Capture immediately
+          setTimeout(() => {
+            const imageData = captureFrame();
+            detectPerson(imageData);
+          }, 1000);
+
+          // Set up interval for periodic captures
+          intervalId = setInterval(() => {
+            const imageData = captureFrame();
+            detectPerson(imageData);
+            secondsUntilNext = 6;
+          }, 6000);
+
+          // Countdown timer
+          countdownInterval = setInterval(() => {
+            secondsUntilNext--;
+            if (secondsUntilNext > 0) {
+              countdown.textContent = `Next detection in ${secondsUntilNext} seconds...`;
+            } else {
+              countdown.textContent = "";
+            }
+          }, 1000);
+        });
+      }
+
+      // Stop detection
+      function stopDetection() {
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        if (countdownInterval) {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+        }
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+        }
+        video.srcObject = null;
+
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        cameraSelect.disabled = false;
+        status.textContent = "Stopped";
+        status.className = "status idle";
+        countdown.textContent = "";
+        lastResult.textContent = "";
+      }
+
+      // Event listeners
+      startBtn.addEventListener("click", startDetection);
+      stopBtn.addEventListener("click", stopDetection);
+
+      cameraSelect.addEventListener("change", async () => {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+        const deviceId = cameraSelect.value;
+        if (deviceId) {
+          await startVideo(deviceId);
+          startBtn.disabled = false;
+        } else {
+          video.srcObject = null;
+          startBtn.disabled = true;
+        }
+      });
+
+      // Event listener for load cameras button
+      loadCamerasBtn.addEventListener("click", loadCameras);
+    </script>
+  </body>
+</html>
