@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OpenAI Prompt</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 42rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      label {
+        display: block;
+        margin-top: 1rem;
+        font-weight: 500;
+      }
+      input[type="password"],
+      textarea,
+      button {
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        font: inherit;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+      }
+      textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+      button {
+        margin-top: 1rem;
+        background: #0a0a0a;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #333;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      #output {
+        margin-top: 1.5rem;
+        padding: 1rem;
+        background: #f5f5f5;
+        border-radius: 6px;
+        min-height: 4rem;
+        white-space: pre-wrap;
+      }
+      .error {
+        color: #c00;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>OpenAI Prompt</h1>
+
+    <label for="apiKey">API Key</label>
+    <input
+      type="password"
+      id="apiKey"
+      placeholder="sk-..."
+      autocomplete="off"
+    />
+
+    <label for="prompt">Prompt</label>
+    <textarea
+      id="prompt"
+      placeholder="Write a short bedtime story about a unicorn."
+    ></textarea>
+
+    <button type="button" id="send">Send</button>
+
+    <label>Output</label>
+    <p id="output" aria-live="polite">Response will appear here.</p>
+
+    <script>
+      const apiKeyEl = document.getElementById("apiKey");
+      const promptEl = document.getElementById("prompt");
+      const sendBtn = document.getElementById("send");
+      const outputEl = document.getElementById("output");
+
+      sendBtn.addEventListener("click", async () => {
+        const apiKey = apiKeyEl.value.trim();
+        const input = promptEl.value.trim();
+
+        if (!apiKey) {
+          outputEl.textContent = "Please enter your OpenAI API key.";
+          outputEl.className = "error";
+          return;
+        }
+        if (!input) {
+          outputEl.textContent = "Please enter a prompt.";
+          outputEl.className = "error";
+          return;
+        }
+
+        outputEl.className = "";
+        outputEl.textContent = "Sending…";
+        sendBtn.disabled = true;
+
+        try {
+          const res = await fetch("https://api.openai.com/v1/responses", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + apiKey,
+            },
+            body: JSON.stringify({
+              model: "gpt-5.2",
+              input: input,
+            }),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            outputEl.textContent =
+              "Error: " + (data.error?.message || res.statusText || res.status);
+            outputEl.className = "error";
+            return;
+          }
+
+          const text =
+            data.output?.[0]?.content?.[0]?.text ??
+            JSON.stringify(data, null, 2);
+          outputEl.textContent = text;
+        } catch (err) {
+          outputEl.textContent = "Request failed: " + err.message;
+          outputEl.className = "error";
+        } finally {
+          sendBtn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
