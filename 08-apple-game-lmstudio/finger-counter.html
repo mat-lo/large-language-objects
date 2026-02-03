@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Finger Counter — LM Studio Vision</title>
+    <style>
+      :root {
+        --bg: #0f0f12;
+        --surface: #18181c;
+        --border: #2a2a30;
+        --text: #e4e4e7;
+        --muted: #71717a;
+        --accent: #a78bfa;
+        --success: #34d399;
+        --error: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        min-height: 100vh;
+        padding: 1.5rem;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0 0 1rem 0;
+        color: var(--accent);
+      }
+      .layout {
+        display: grid;
+        gap: 1.5rem;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .camera-section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .camera-section h2 {
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin: 0;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--muted);
+      }
+      .video-wrap {
+        position: relative;
+        aspect-ratio: 4/3;
+        max-height: 360px;
+        background: #000;
+      }
+      #video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      #snapshot {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .status {
+        padding: 0.75rem 1rem;
+        border-top: 1px solid var(--border);
+        font-size: 0.8125rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--muted);
+        flex-shrink: 0;
+      }
+      .status-dot.live {
+        background: var(--success);
+        box-shadow: 0 0 8px var(--success);
+      }
+      .status-dot.error {
+        background: var(--error);
+      }
+      .result-section {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+      }
+      .result-section h2 {
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin: 0 0 0.5rem 0;
+        color: var(--muted);
+      }
+      .finger-result {
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+      .finger-result.success {
+        color: var(--success);
+      }
+      .finger-result.pending {
+        color: var(--muted);
+      }
+      .finger-result.error {
+        color: var(--error);
+      }
+      .next-capture {
+        font-size: 0.8125rem;
+        color: var(--muted);
+        margin-top: 0.5rem;
+      }
+      .controls {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      button {
+        background: var(--surface);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:hover {
+        background: var(--border);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      #canvas {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <h1>Finger Counter — LM Studio Vision</h1>
+
+      <section class="camera-section">
+        <h2>Camera</h2>
+        <div class="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+          <img id="snapshot" alt="Last snapshot" />
+        </div>
+        <div class="status" id="status">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="statusText">Starting camera…</span>
+        </div>
+      </section>
+
+      <section class="result-section">
+        <h2>Fingers detection (qwen3-vl-4b)</h2>
+        <div class="finger-result pending" id="fingerResult">—</div>
+        <div class="next-capture" id="nextCapture"></div>
+        <div class="controls" style="margin-top: 1rem">
+          <button type="button" id="btnStart">Start</button>
+          <button type="button" id="btnStop" disabled>Stop</button>
+        </div>
+      </section>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+      const LM_STUDIO_BASE = "http://localhost:1234";
+      const MODEL = "qwen3-vl-4b";
+      const INTERVAL_MS = 10_000;
+
+      const video = document.getElementById("video");
+      const snapshotImg = document.getElementById("snapshot");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const statusEl = document.getElementById("status");
+      const statusDot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      const fingerResult = document.getElementById("fingerResult");
+      const nextCapture = document.getElementById("nextCapture");
+      const btnStart = document.getElementById("btnStart");
+      const btnStop = document.getElementById("btnStop");
+
+      let stream = null;
+      let intervalId = null;
+      let nextCaptureAt = null;
+      let nextCaptureTimerId = null;
+
+      function setStatus(ok, text) {
+        statusDot.classList.remove("live", "error");
+        statusDot.classList.add(ok ? "live" : "error");
+        statusText.textContent = text;
+      }
+
+      function setFingerCountResult(value, isError = false) {
+        fingerResult.classList.remove("success", "pending", "error");
+        if (isError) {
+          fingerResult.classList.add("error");
+          fingerResult.textContent = value;
+        } else if (typeof value === "number") {
+          fingerResult.classList.add("success");
+          fingerResult.textContent = `${value} finger${value === 1 ? "" : "s"} shown`;
+        } else {
+          fingerResult.classList.add("pending");
+          fingerResult.textContent = "—";
+        }
+      }
+
+      function scheduleNextLabel() {
+        if (nextCaptureTimerId) clearTimeout(nextCaptureTimerId);
+        nextCaptureAt = Date.now() + INTERVAL_MS;
+        const update = () => {
+          const left = Math.max(
+            0,
+            Math.ceil((nextCaptureAt - Date.now()) / 1000)
+          );
+          nextCapture.textContent =
+            left > 0 ? `Next snapshot in ${left}s` : "Capturing…";
+          if (left > 0) nextCaptureTimerId = setTimeout(update, 500);
+        };
+        update();
+      }
+
+      function captureFrame() {
+        if (!stream || video.readyState < 2) return null;
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (!w || !h) return null;
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0);
+        try {
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          snapshotImg.src = dataUrl;
+          snapshotImg.style.opacity = "1";
+          setTimeout(() => {
+            snapshotImg.style.opacity = "0";
+          }, 500);
+          return dataUrl;
+        } catch (e) {
+          console.error("Canvas toDataURL failed", e);
+          return null;
+        }
+      }
+
+      async function askFingerCount(dataUrl) {
+        const body = {
+          model: MODEL,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a vision assistant. Look at the image and answer only with the requested JSON. No other text.",
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: 'How many fingers is the person showing to the camera on one hand? (1 to 5). Reply with JSON only: {"fingerCount": number}.',
+                },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "finger_response",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: {
+                  fingerCount: { type: "integer", minimum: 0, maximum: 10 },
+                },
+                required: ["fingerCount"],
+              },
+            },
+          },
+          temperature: 0,
+          max_tokens: 20,
+          stream: false,
+        };
+
+        const res = await fetch(`${LM_STUDIO_BASE}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(
+            `LM Studio ${res.status}: ${errText || res.statusText}`
+          );
+        }
+
+        const data = await res.json();
+        const content = data?.choices?.[0]?.message?.content;
+        if (content == null) throw new Error("No content in response");
+
+        const parsed = JSON.parse(content);
+        if (typeof parsed.fingerCount !== "number")
+          throw new Error("Invalid response: missing fingerCount number");
+        return parsed.fingerCount;
+      }
+
+      async function runCapture() {
+        const dataUrl = captureFrame();
+        if (!dataUrl) {
+          setFingerCountResult("No frame", true);
+          scheduleNextLabel();
+          return;
+        }
+        setFingerCountResult(null);
+        nextCapture.textContent = "Analyzing…";
+        try {
+          const count = await askFingerCount(dataUrl);
+          setFingerCountResult(count);
+        } catch (e) {
+          console.error(e);
+          setFingerCountResult(e.message || "Request failed", true);
+        }
+        scheduleNextLabel();
+      }
+
+      function startInterval() {
+        if (intervalId) return;
+        runCapture();
+        intervalId = setInterval(runCapture, INTERVAL_MS);
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+      }
+
+      function stopInterval() {
+        if (nextCaptureTimerId) {
+          clearTimeout(nextCaptureTimerId);
+          nextCaptureTimerId = null;
+        }
+        if (intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
+        nextCapture.textContent = "";
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+      }
+
+      async function initCamera() {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: "user" },
+            audio: false,
+          });
+          video.srcObject = stream;
+          await new Promise((resolve, reject) => {
+            video.onloadedmetadata = resolve;
+            video.onerror = () => reject(new Error("Video load failed"));
+          });
+          setStatus(true, "Camera live");
+          btnStart.disabled = false;
+        } catch (e) {
+          setStatus(false, "Camera error: " + (e.message || "denied"));
+          setFingerCountResult("Camera failed", true);
+        }
+      }
+
+      btnStart.addEventListener("click", startInterval);
+      btnStop.addEventListener("click", stopInterval);
+
+      initCamera();
+    </script>
+  </body>
+</html>

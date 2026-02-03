@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Apple Matcher — Finger Game</title>
+    <style>
+      :root {
+        --bg: #0f0f12;
+        --surface: #18181c;
+        --border: #2a2a30;
+        --text: #e4e4e7;
+        --muted: #71717a;
+        --accent: #a78bfa;
+        --success: #34d399;
+        --error: #f87171;
+        --gold: #fbbf24;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        margin: 0;
+        min-height: 100vh;
+        padding: 1.5rem;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        max-width: 900px;
+        margin: 0 auto 1.5rem auto;
+      }
+      h1 {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin: 0;
+        color: var(--accent);
+        letter-spacing: -0.02em;
+      }
+      .score-box {
+        background: var(--surface);
+        border: 2px solid var(--accent);
+        border-radius: 12px;
+        padding: 0.5rem 1.25rem;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        box-shadow: 0 0 15px rgba(167, 139, 250, 0.2);
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      @media (max-width: 768px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .card-header {
+        padding: 0.75rem 1.25rem;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .card-header h2 {
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin: 0;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      .video-wrap {
+        position: relative;
+        aspect-ratio: 4/3;
+        background: #000;
+      }
+      #video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      #snapshot {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+      }
+      .game-section {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 2rem;
+        text-align: center;
+        flex-grow: 1;
+      }
+      .target-display {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        min-height: 4.5rem;
+        display: flex;
+        gap: 0.25rem;
+      }
+      .apple {
+        animation: bounce 0.5s cubic-bezier(0.36, 0, 0.66, -0.56) infinite alternate;
+      }
+      @keyframes bounce {
+        from { transform: translateY(0); }
+        to { transform: translateY(-10px); }
+      }
+      .target-text {
+        font-size: 1.125rem;
+        color: var(--text);
+        margin-bottom: 2rem;
+        font-weight: 500;
+      }
+      .feedback {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-top: 1rem;
+        min-height: 2.25rem;
+        transition: all 0.2s ease;
+      }
+      .feedback.correct { color: var(--success); transform: scale(1.1); }
+      .feedback.wrong { color: var(--error); }
+      .feedback.analyzing { color: var(--accent); }
+
+      .status-bar {
+        padding: 0.75rem 1.25rem;
+        background: rgba(0,0,0,0.2);
+        border-top: 1px solid var(--border);
+        font-size: 0.8125rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+      .status-dot.live { background: var(--success); box-shadow: 0 0 10px var(--success); }
+      .status-dot.error { background: var(--error); }
+
+      .controls {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+      }
+      button {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      }
+      button:hover {
+        filter: brightness(1.1);
+        transform: translateY(-2px);
+      }
+      button:active {
+        transform: translateY(0);
+      }
+      button:disabled {
+        background: var(--border);
+        color: var(--muted);
+        cursor: not-allowed;
+        transform: none;
+      }
+      #btnStop {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+      }
+      #canvas { display: none; }
+
+      .timer-bar {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        height: 4px;
+        background: var(--accent);
+        width: 0%;
+        transition: width 0.1s linear;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Apple Matcher</h1>
+      <div class="score-box" id="scoreDisplay">Score: 0</div>
+    </div>
+
+    <div class="layout">
+      <!-- Camera View -->
+      <section class="card">
+        <div class="card-header">
+          <h2>Your View</h2>
+          <span id="nextCaptureText" style="font-size: 0.75rem; color: var(--muted)"></span>
+        </div>
+        <div class="video-wrap">
+          <video id="video" autoplay playsinline muted></video>
+          <img id="snapshot" alt="Last snapshot" />
+          <div class="timer-bar" id="timerBar"></div>
+        </div>
+        <div class="status-bar">
+          <div class="status-dot" id="statusDot"></div>
+          <span id="statusText">Starting camera…</span>
+        </div>
+      </section>
+
+      <!-- Game View -->
+      <section class="card">
+        <div class="card-header">
+          <h2>The Challenge</h2>
+        </div>
+        <div class="game-section">
+          <div class="target-display" id="targetDisplay"></div>
+          <div class="target-text" id="targetText">Match the apples!</div>
+          
+          <div class="feedback" id="feedback">—</div>
+
+          <div class="controls">
+            <button type="button" id="btnStart">Start Game</button>
+            <button type="button" id="btnStop" disabled>Stop</button>
+          </div>
+        </div>
+        <div class="status-bar">
+           <span style="color: var(--muted)">Detection Model: qwen3-vl-4b</span>
+        </div>
+      </section>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <script>
+      const LM_STUDIO_BASE = "http://localhost:1234";
+      const MODEL = "qwen3-vl-4b";
+      const INTERVAL_MS = 8000; // Slightly faster for a game
+
+      const video = document.getElementById("video");
+      const snapshotImg = document.getElementById("snapshot");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+      const statusDot = document.getElementById("statusDot");
+      const statusText = document.getElementById("statusText");
+      const scoreDisplay = document.getElementById("scoreDisplay");
+      const targetDisplay = document.getElementById("targetDisplay");
+      const targetText = document.getElementById("targetText");
+      const feedback = document.getElementById("feedback");
+      const timerBar = document.getElementById("timerBar");
+      const nextCaptureText = document.getElementById("nextCaptureText");
+      const btnStart = document.getElementById("btnStart");
+      const btnStop = document.getElementById("btnStop");
+
+      let stream = null;
+      let intervalId = null;
+      let score = 0;
+      let targetNumber = 0;
+      let isAnalyzing = false;
+      let nextCaptureAt = null;
+      let timerUpdateId = null;
+
+      function setStatus(ok, text) {
+        statusDot.classList.remove("live", "error");
+        statusDot.classList.add(ok ? "live" : "error");
+        statusText.textContent = text;
+      }
+
+      function updateScore(points) {
+        score += points;
+        scoreDisplay.textContent = `Score: ${score}`;
+        // Animation effect
+        scoreDisplay.style.transform = "scale(1.2)";
+        setTimeout(() => scoreDisplay.style.transform = "scale(1)", 200);
+      }
+
+      function setTarget() {
+        targetNumber = Math.floor(Math.random() * 5) + 1;
+        targetDisplay.innerHTML = "";
+        for (let i = 0; i < targetNumber; i++) {
+          const apple = document.createElement("span");
+          apple.textContent = "🍎";
+          apple.className = "apple";
+          apple.style.animationDelay = `${i * 0.1}s`;
+          targetDisplay.appendChild(apple);
+        }
+        targetText.textContent = `Show ${targetNumber} finger${targetNumber === 1 ? "" : "s"}!`;
+        feedback.textContent = "Ready?";
+        feedback.className = "feedback";
+      }
+
+      function updateTimer() {
+        if (!nextCaptureAt) return;
+        const now = Date.now();
+        const remaining = Math.max(0, nextCaptureAt - now);
+        const percent = ((INTERVAL_MS - remaining) / INTERVAL_MS) * 100;
+        timerBar.style.width = `${percent}%`;
+        
+        const seconds = Math.ceil(remaining / 1000);
+        nextCaptureText.textContent = seconds > 0 ? `Capture in ${seconds}s` : "Capturing...";
+        
+        if (remaining > 0) {
+          timerUpdateId = requestAnimationFrame(updateTimer);
+        }
+      }
+
+      function captureFrame() {
+        if (!stream || video.readyState < 2) return null;
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (!w || !h) return null;
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0);
+        try {
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          snapshotImg.src = dataUrl;
+          snapshotImg.style.opacity = "1";
+          setTimeout(() => { snapshotImg.style.opacity = "0"; }, 800);
+          return dataUrl;
+        } catch (e) {
+          console.error("Capture failed", e);
+          return null;
+        }
+      }
+
+      async function askFingerCount(dataUrl) {
+        const body = {
+          model: MODEL,
+          messages: [
+            {
+              role: "system",
+              content: "You are a finger counting game assistant. Look at the image and return JSON only: {\"fingerCount\": number}."
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "How many fingers is the person showing on one hand? (0-10). JSON only." },
+                { type: "image_url", image_url: { url: dataUrl } }
+              ]
+            }
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "finger_response",
+              strict: true,
+              schema: {
+                type: "object",
+                properties: { fingerCount: { type: "integer" } },
+                required: ["fingerCount"]
+              }
+            }
+          },
+          temperature: 0,
+          max_tokens: 20
+        };
+
+        const res = await fetch(`${LM_STUDIO_BASE}/v1/chat/completions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+
+        if (!res.ok) throw new Error(`API Error: ${res.status}`);
+        const data = await res.json();
+        const content = JSON.parse(data.choices[0].message.content);
+        return content.fingerCount;
+      }
+
+      async function runCapture() {
+        if (isAnalyzing) return;
+        
+        const dataUrl = captureFrame();
+        if (!dataUrl) return;
+
+        isAnalyzing = true;
+        feedback.textContent = "Checking...";
+        feedback.className = "feedback analyzing";
+
+        try {
+          const count = await askFingerCount(dataUrl);
+          console.log(`Model saw: ${count}, Target was: ${targetNumber}`);
+          
+          if (count === targetNumber) {
+            feedback.textContent = "CORRECT! 🎉";
+            feedback.className = "feedback correct";
+            updateScore(1);
+            // Delay a bit before next target to let user see feedback
+            setTimeout(setTarget, 2000);
+          } else {
+            feedback.textContent = `Saw ${count}. Try ${targetNumber}!`;
+            feedback.className = "feedback wrong";
+          }
+        } catch (e) {
+          console.error(e);
+          feedback.textContent = "Error checking...";
+        } finally {
+          isAnalyzing = false;
+          nextCaptureAt = Date.now() + INTERVAL_MS;
+          updateTimer();
+        }
+      }
+
+      function startGame() {
+        score = 0;
+        updateScore(0);
+        setTarget();
+        btnStart.disabled = true;
+        btnStop.disabled = false;
+        
+        nextCaptureAt = Date.now() + INTERVAL_MS;
+        updateTimer();
+        intervalId = setInterval(runCapture, INTERVAL_MS);
+      }
+
+      function stopGame() {
+        if (intervalId) clearInterval(intervalId);
+        if (timerUpdateId) cancelAnimationFrame(timerUpdateId);
+        intervalId = null;
+        nextCaptureAt = null;
+        timerBar.style.width = "0%";
+        nextCaptureText.textContent = "";
+        btnStart.disabled = false;
+        btnStop.disabled = true;
+        feedback.textContent = "Game Stopped";
+        feedback.className = "feedback";
+      }
+
+      async function initCamera() {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+          video.srcObject = stream;
+          setStatus(true, "Camera Ready");
+        } catch (e) {
+          setStatus(false, "Camera failed: " + e.message);
+        }
+      }
+
+      btnStart.addEventListener("click", startGame);
+      btnStop.addEventListener("click", stopGame);
+
+      initCamera();
+    </script>
+  </body>
+</html>
