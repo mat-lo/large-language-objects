@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Joke from LM Studio</title>
+  </head>
+  <body>
+    <h1>hello</h1>
+    <button type="button" id="get-joke">Get a joke</button>
+    <p id="joke-output" aria-live="polite"></p>
+    <p id="joke-error" style="color: red" aria-live="assertive"></p>
+
+    <script>
+      const API_URL = "http://localhost:1234/v1/chat/completions";
+      const MODEL = "qwen3-vl-4b";
+
+      document
+        .getElementById("get-joke")
+        .addEventListener("click", async () => {
+          const outputEl = document.getElementById("joke-output");
+          const errorEl = document.getElementById("joke-error");
+          errorEl.textContent = "";
+          outputEl.textContent = "…";
+
+          try {
+            const res = await fetch(API_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: MODEL,
+                messages: [
+                  { role: "system", content: "You are a helpful jokester." },
+                  { role: "user", content: "Tell me a joke." },
+                ],
+                response_format: {
+                  type: "json_schema",
+                  json_schema: {
+                    name: "joke_response",
+                    strict: true,
+                    schema: {
+                      type: "object",
+                      properties: {
+                        joke: { type: "string" },
+                      },
+                      required: ["joke"],
+                    },
+                  },
+                },
+                temperature: 0.7,
+                max_tokens: 50,
+                stream: false,
+              }),
+            });
+
+            if (!res.ok) {
+              const err = await res.text();
+              throw new Error(
+                res.status + " " + res.statusText + (err ? ": " + err : "")
+              );
+            }
+
+            const data = await res.json();
+            const content = data.choices?.[0]?.message?.content;
+            if (!content) throw new Error("No joke in response");
+
+            const parsed = JSON.parse(content);
+            outputEl.textContent = parsed.joke ?? content;
+          } catch (e) {
+            outputEl.textContent = "";
+            errorEl.textContent =
+              e.message ||
+              "Failed to get joke. Is LM Studio running with " + MODEL + "?";
+          }
+        });
+    </script>
+  </body>
+</html>
